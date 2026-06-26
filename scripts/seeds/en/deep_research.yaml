@@ -1,0 +1,11 @@
+scenario: deep_research
+description: Multi-hop questions requiring several searches, extraction, and synthesis across sources.
+seeds:
+  - "Compare the environmental impact of lithium-ion versus solid-state batteries across their full lifecycle, citing quantitative data from at least three independent sources."
+  - "Trace the evolution of the European Union's General Data Protection Regulation: what were the key amendments between first draft and final adoption, which stakeholders influenced each, and what penalties have been imposed since enforcement began?"
+  - "Analyze the causes of the 2023 banking turbulence (Silicon Valley Bank, Credit Suisse, Signature Bank): identify common risk factors, regulatory gaps, and the emergency measures taken by authorities in each case."
+  - "How does the carbon intensity of electricity generation in Germany compare to France over the last decade, and what policy decisions explain the difference?"
+  - "Investigate the current state of fusion energy: the main competing confinement approaches, the most recent net-energy milestones, and the projected timeline for commercial reactors."
+  - "Compare the efficacy and side effects of mRNA versus viral-vector COVID-19 vaccines based on peer-reviewed studies published after 2022."
+  - "What are the major technical and economic barriers to large-scale green hydrogen production, and which countries are leading deployment?"
+  - "Map the supply chain for neodymium magnets: where is the ore mined, where is it refined, and what geopolitical risks affect availability?"

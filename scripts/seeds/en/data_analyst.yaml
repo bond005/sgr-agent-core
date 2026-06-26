@@ -1,0 +1,12 @@
+scenario: data_analyst
+description: Tabular-data analysis using the PandasAnalysisTool over CSV files in the workspace (sales.csv, population.csv, students.csv).
+seeds:
+  - "Using sales.csv: which region generated the highest total revenue, and what was that total?"
+  - "Using sales.csv: compare the average units sold per quarter for Widget versus Gadget. Which product grew faster from Q1 to Q2?"
+  - "Using population.csv: what is the total population of all Asian countries in 2023, and what share of the Asian total does India represent?"
+  - "Using population.csv: compute the correlation between population_millions and gdp_per_capita in 2023 and interpret it."
+  - "Using population.csv: how did the population of India change between 2000 and 2023, both in absolute millions and as a percentage?"
+  - "Using students.csv: what is the average score per subject, and which subject has the highest standard deviation of scores?"
+  - "Using students.csv: rank students by their overall average score across all subjects and report the top three with their averages."
+  - "Using students.csv: is there a relationship between attendance_pct and average score? Support your answer with a correlation value."
+  - "Using students.csv and sales.csv: describe the schema (columns and dtypes) of each dataset and list any missing values."

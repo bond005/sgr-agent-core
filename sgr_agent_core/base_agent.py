@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import traceback
 import uuid
 from datetime import datetime
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 
 from sgr_agent_core.agent_definition import AgentConfig, ToolDefinition
 from sgr_agent_core.models import AgentContext, AgentStatesEnum
+from sgr_agent_core.services.dataset_recorder import DatasetRecorder, get_recorder, set_recorder
 from sgr_agent_core.services.prompt_loader import PromptLoader
 from sgr_agent_core.services.registry import AgentRegistry
 from sgr_agent_core.stream import BaseStreamingGenerator, OpenAIStreamingGenerator
@@ -28,6 +30,137 @@ class AgentRegistryMixin:
         super().__init_subclass__(**kwargs)
         if cls.__name__ not in ("BaseAgent",):
             AgentRegistry.register(cls, name=cls.name)
+
+
+def _json_safe(obj: Any) -> Any:
+    """Best-effort conversion of ``obj`` into a JSON-serializable structure."""
+    try:
+        return json.loads(json.dumps(obj, ensure_ascii=False, default=str))
+    except (TypeError, ValueError):
+        return str(obj)
+
+
+def _serialize_response_format(response_format: Any) -> Any:
+    """Serialize a ``response_format`` argument into a JSON-safe description.
+
+    Pydantic model classes (used by SGRAgent structured output) are described via
+    their JSON schema; everything else is best-effort serialized.
+    """
+    if response_format is None:
+        return None
+    if isinstance(response_format, type) and hasattr(response_format, "model_json_schema"):
+        return {
+            "type": "json_schema",
+            "json_schema": {"name": response_format.__name__, "schema": response_format.model_json_schema()},
+        }
+    return _json_safe(response_format)
+
+
+def _serialize_llm_request(openai_kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Serialize the request kwargs of an LLM call into a JSON-safe record."""
+    special = {"messages", "tools", "tool_choice", "response_format"}
+    return {
+        "messages": _json_safe(openai_kwargs["messages"]) if openai_kwargs.get("messages") is not None else [],
+        "tools": _json_safe(openai_kwargs["tools"]) if openai_kwargs.get("tools") is not None else None,
+        "tool_choice": openai_kwargs.get("tool_choice"),
+        "response_format": _serialize_response_format(openai_kwargs.get("response_format")),
+        "params": {k: _json_safe(v) for k, v in openai_kwargs.items() if k not in special},
+    }
+
+
+def _serialize_tool_call(tool_call: Any) -> dict[str, Any]:
+    """Serialize a single tool call into a JSON-safe dict (defensive)."""
+    function = getattr(tool_call, "function", None)
+    return {
+        "id": getattr(tool_call, "id", None),
+        "type": getattr(tool_call, "type", "function"),
+        "function": {
+            "name": getattr(function, "name", None),
+            "arguments": getattr(function, "arguments", None),
+        },
+    }
+
+
+def _serialize_llm_response(completion: Any) -> dict[str, Any]:
+    """Serialize a ChatCompletion into a JSON-safe response record."""
+    try:
+        choice = completion.choices[0]
+        message = choice.message
+    except (AttributeError, IndexError, TypeError):
+        return {"raw": _json_safe(completion)}
+    tool_calls = getattr(message, "tool_calls", None) or []
+    usage = getattr(completion, "usage", None)
+    usage_dict = None
+    if usage is not None:
+        usage_dict = {
+            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+            "completion_tokens": getattr(usage, "completion_tokens", None),
+            "total_tokens": getattr(usage, "total_tokens", None),
+        }
+    return {
+        "content": getattr(message, "content", None),
+        "reasoning_content": getattr(message, "reasoning_content", None),
+        "tool_calls": [_serialize_tool_call(tc) for tc in tool_calls],
+        "finish_reason": getattr(choice, "finish_reason", None),
+        "model": getattr(completion, "model", None),
+        "usage": usage_dict,
+    }
+
+
+def _render_reasoning_cot(arguments: str) -> str:
+    """Render a ReasoningTool arguments JSON string as a readable CoT block."""
+    try:
+        data = json.loads(arguments) if arguments else {}
+    except (TypeError, ValueError):
+        return arguments or ""
+    lines: list[str] = []
+    steps = data.get("reasoning_steps")
+    if steps:
+        lines.append("Reasoning steps:")
+        lines.extend(f"- {s}" for s in steps)
+    for key in ("current_situation", "plan_status"):
+        value = data.get(key)
+        if value:
+            label = key.replace("_", " ").capitalize()
+            lines.append(f"{label}: {value}")
+    remaining = data.get("remaining_steps")
+    if remaining:
+        lines.append("Remaining steps:")
+        lines.extend(f"- {s}" for s in remaining)
+    return "\n".join(lines) if lines else (arguments or "")
+
+
+def _transform_trajectory_messages(
+    messages: list[dict[str, Any]],
+    reasoning_tool_name: str | None,
+    include_reasoning: bool,
+) -> list[dict[str, Any]]:
+    """Clean and transform the conversation into a sharegpt-style message list.
+
+    - When ``include_reasoning`` is True, the SGR reasoning tool call and its
+      (empty) tool result are replaced by a single assistant message containing
+      the rendered chain-of-thought text.
+    """
+    if not include_reasoning or not reasoning_tool_name:
+        return messages
+    result: list[dict[str, Any]] = []
+    skip_tool_ids: set[str] = set()
+    for message in messages:
+        role = message.get("role")
+        tool_calls = message.get("tool_calls")
+        if role == "assistant" and tool_calls and len(tool_calls) == 1:
+            function = tool_calls[0].get("function") or {}
+            if function.get("name") == reasoning_tool_name:
+                cot = _render_reasoning_cot(function.get("arguments", ""))
+                result.append({"role": "assistant", "content": cot})
+                call_id = tool_calls[0].get("id")
+                if call_id is not None:
+                    skip_tool_ids.add(call_id)
+                continue
+        if role == "tool" and message.get("tool_call_id") in skip_tool_ids:
+            continue
+        result.append(message)
+    return result
 
 
 class BaseAgent(AgentRegistryMixin):
@@ -62,6 +195,84 @@ class BaseAgent(AgentRegistryMixin):
         self.log = []
 
         self._execute_task: asyncio.Task | None = None
+
+        self.def_name = def_name
+        self.role = self._resolve_role(agent_config, def_name)
+        self.language: str | None = None
+        self.recorder = self._get_or_create_recorder()
+
+    def _resolve_role(self, agent_config: AgentConfig, def_name: str | None) -> str:
+        """Resolve the role tag: explicit config role, else def name, else class name."""
+        role = getattr(agent_config, "role", None)
+        if role:
+            return role
+        return def_name or self.name
+
+    def _get_or_create_recorder(self) -> DatasetRecorder | None:
+        """Return the shared dataset recorder, creating it if recording is enabled.
+
+        Recording is enabled when the agent's ``dataset`` config has ``enabled=True``.
+        A single shared recorder is reused across agents (module-level singleton).
+        """
+        cfg = getattr(self.config, "dataset", None)
+        if cfg is None or not getattr(cfg, "enabled", False):
+            return None
+        existing = get_recorder()
+        if existing is not None:
+            return existing
+        teacher = getattr(cfg, "teacher_model", None) or self.config.llm.model
+        recorder = DatasetRecorder(cfg, teacher_model=teacher)
+        set_recorder(recorder)
+        return recorder
+
+    async def _llm_call(self, phase: str, **openai_kwargs: Any) -> Any:
+        """Execute a streaming chat completion and (optionally) record it.
+
+        Centralizes the streaming consumption pattern shared by all agent phases
+        (forwarding chunks to the streaming generator and aggregating the final
+        completion) and captures the raw request/response for the dataset recorder
+        when one is active.
+
+        Args:
+            phase: Phase label used for the stream phase id and dataset tagging
+                (e.g. ``"reasoning"``, ``"action"``, ``"generate"``).
+            **openai_kwargs: Keyword arguments forwarded verbatim to
+                ``openai_client.chat.completions.stream`` (messages, tools,
+                response_format, tool_choice, model params, ...).
+
+        Returns:
+            The aggregated :class:`~openai.types.chat.ChatCompletion`.
+        """
+        phase_id = f"{self._context.iteration}-{phase}"
+        request_serialized = _serialize_llm_request(openai_kwargs) if self.recorder is not None else None
+        started = time.monotonic()
+        async with self.openai_client.chat.completions.stream(**openai_kwargs) as stream:
+            async for event in stream:
+                if event.type == "chunk":
+                    self.streaming_generator.add_chunk(event.chunk, phase_id)
+            completion = await stream.get_final_completion()
+        if self.recorder is not None and request_serialized is not None:
+            try:
+                await self.recorder.record_call(
+                    {
+                        "record_type": "llm_call",
+                        "call_id": str(uuid.uuid4()),
+                        "timestamp": datetime.now().isoformat(),
+                        "agent_id": self.id,
+                        "agent_class": type(self).__name__,
+                        "role": self.role,
+                        "language": self.language,
+                        "phase": phase,
+                        "iteration": self._context.iteration,
+                        "request": request_serialized,
+                        "response": _serialize_llm_response(completion),
+                        "teacher_model": self.recorder.teacher_model,
+                        "latency_ms": int((time.monotonic() - started) * 1000),
+                    }
+                )
+            except Exception as e:  # noqa: BLE001 - recording must never break execution
+                self.logger.warning(f"Failed to record LLM call for dataset: {e}")
+        return completion
 
     def get_tool_config(self, tool_class: Type[BaseTool]) -> BaseModel | dict[str, Any]:
         """Return resolved config for a tool as a Pydantic model or raw dict.
@@ -170,6 +381,57 @@ class BaseAgent(AgentRegistryMixin):
         }
 
         json.dump(agent_log, open(filepath, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+
+    async def _record_trajectory(self) -> None:
+        """Assemble and record a full agent trajectory (Level B record).
+
+        Builds a sharegpt-style message list from the final conversation plus the
+        toolkit function schemas, applies the reasoning transformation, and writes
+        one ``trajectory`` record to ``trajectories.jsonl``. No-op unless recording
+        is enabled with the ``trajectory`` mode.
+        """
+        if self.recorder is None or "trajectory" not in self.recorder.config.modes:
+            return
+        # Only keep successfully completed runs; FAILED/ERROR/CANCELLED (e.g. a
+        # teacher API error such as insufficient balance) would produce a
+        # degenerate trajectory without a final answer and pollute the dataset.
+        if self._context.state != AgentStatesEnum.COMPLETED:
+            self.logger.debug(f"Skipping trajectory record: agent state is {self._context.state} (not COMPLETED)")
+            return
+        try:
+            messages = await self._prepare_context()
+            # Drop synthetic system messages (e.g. "Agent {id} started"); the real
+            # system prompt is always the first message.
+            cleaned = [m for i, m in enumerate(messages) if not (m.get("role") == "system" and i != 0)]
+            reasoning_tool_name: str | None = None
+            reasoning_tool_cls = getattr(self, "ReasoningTool", None)
+            if reasoning_tool_cls is not None:
+                reasoning_tool_name = getattr(reasoning_tool_cls, "tool_name", None)
+            cleaned = _transform_trajectory_messages(
+                cleaned, reasoning_tool_name, self.recorder.config.include_reasoning
+            )
+            tools = [pydantic_function_tool(tool, name=tool.tool_name) for tool in self.toolkit]
+            state = self._context.state
+            finish_state = state.value if hasattr(state, "value") else str(state)
+            await self.recorder.record_trajectory(
+                {
+                    "record_type": "trajectory",
+                    "timestamp": datetime.now().isoformat(),
+                    "agent_id": self.id,
+                    "agent_class": type(self).__name__,
+                    "role": self.role,
+                    "language": self.language,
+                    "teacher_model": self.recorder.teacher_model,
+                    "tools": _json_safe(tools),
+                    "messages": _json_safe(cleaned),
+                    "metadata": {
+                        "iterations": self._context.iteration,
+                        "finish_state": finish_state,
+                    },
+                }
+            )
+        except Exception as e:  # noqa: BLE001 - recording must never break execution
+            self.logger.warning(f"Failed to record trajectory for dataset: {e}")
 
     async def _prepare_context(self) -> list[dict]:
         """Prepare a conversation context with system prompt, task data and any
@@ -296,3 +558,5 @@ class BaseAgent(AgentRegistryMixin):
                     phase_id=f"{self._context.iteration}-final", content=self._context.execution_result
                 )
             self._save_agent_log()
+            if self.recorder is not None:
+                await self._record_trajectory()

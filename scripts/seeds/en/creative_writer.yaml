@@ -1,0 +1,13 @@
+scenario: creative_writer
+description: "Creative writing tasks: fiction, marketing copy, dialogue, poetry. No tools needed beyond a final answer."
+seeds:
+  - "Write a 400-word science-fiction short story about a lighthouse keeper on a distant moon who receives a signal that cannot exist."
+  - "Compose a product launch announcement for a fictional smart gardening device called 'VerdantIQ'. Target audience: urban apartment dwellers. Tone: warm, aspirational."
+  - "Write a dialogue between two siblings meeting after ten years apart. One stayed in their hometown, the other traveled the world. Reveal the tension gradually."
+  - "Write a sonnet about the loneliness of deep-space probes, in strict Shakespearean form (14 lines, ABAB CDCD EFEF GG)."
+  - "Draft a cover letter for a junior data analyst position that creatively explains a two-year career gap spent running a small bakery."
+  - "Write the opening chapter (about 500 words) of a mystery novel set in a flooded coastal city where the tide reveals a new clue each day."
+  - "Create three distinct Instagram captions (with hashtags) for a sustainable-fashion brand launching a denim line made from recycled ocean plastic."
+  - "Write a humorous first-person monologue from the perspective of a coffee machine observing the morning routines of a busy office."
+  - "Compose a bedtime story for a six-year-old about a cloud that is afraid of heights, with a gentle moral about courage."
+  - "Write a persuasive op-ed (about 350 words) arguing for or against four-day work weeks, addressed to skeptical business owners."

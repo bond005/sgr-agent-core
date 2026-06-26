@@ -274,6 +274,8 @@ test_runs/
 *_test.py
 tests/temp/
 test_output/
+scripts/dataset/
+scripts/dataset_sharegpt/
 
 # Профилирование
 *.prof

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, ClassVar, Self, TypeVar
+from typing import TYPE_CHECKING, ClassVar, TypeVar
 
 from fastmcp import Client
 from pydantic import BaseModel
 
+from sgr_agent_core._compat import Self
 from sgr_agent_core.agent_config import GlobalConfig
 from sgr_agent_core.services.registry import ToolRegistry
 

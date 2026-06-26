@@ -1,0 +1,16 @@
+region,product,quarter,units,revenue
+EU,Widget,Q1,120,1140.0
+EU,Gadget,Q1,45,1125.0
+US,Widget,Q1,200,1900.0
+US,Gadget,Q1,80,2000.0
+ASIA,Widget,Q1,60,570.0
+ASIA,Gadget,Q1,30,750.0
+EU,Widget,Q2,150,1425.0
+EU,Gadget,Q2,55,1375.0
+US,Widget,Q2,180,1710.0
+US,Gadget,Q2,95,2375.0
+ASIA,Widget,Q2,90,855.0
+ASIA,Gadget,Q2,50,1250.0
+EU,Widget,Q3,110,1045.0
+US,Gadget,Q3,120,3000.0
+ASIA,Widget,Q3,140,1330.0

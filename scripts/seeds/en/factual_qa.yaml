@@ -1,0 +1,13 @@
+scenario: factual_qa
+description: Single-hop factual questions answerable with one or two web searches.
+seeds:
+  - "Who is the current Secretary-General of the United Nations, and when did their term begin?"
+  - "What is the population of Johannesburg according to the most recent census?"
+  - "When was the James Webb Space Telescope launched, and what is its orbital location?"
+  - "Who directed the film 'Parasite', and how many Academy Awards did it win?"
+  - "What is the official currency of Brazil, and what is its ISO 4217 code?"
+  - "Name the current Prime Minister of Japan and their political party."
+  - "What is the height of Mount Aconcagua in meters, and in which country is it located?"
+  - "When was the Treaty on the Non-Proliferation of Nuclear Weapons signed, and how many states are parties to it?"
+  - "What is the wingspan of a wandering albatross, and where does it primarily nest?"
+  - "Who won the Nobel Prize in Literature in 2024, and for which works is the laureate best known?"

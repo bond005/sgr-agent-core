@@ -1,0 +1,12 @@
+scenario: instruction_following
+description: Tasks that require strict adherence to formatting and structural constraints. Do not use any curly braces in instructions.
+seeds:
+  - "Extract the entities from this text as a numbered list with the format NAME - TYPE. Text: Marie Curie discovered radium in 1898 while working in Paris; she later won a second Nobel Prize in 1911."
+  - "Reformat the following comma-separated data into a clean pipe-separated table with a header row. Data: name,age,city,Alice,30,Paris,Bob,25,London"
+  - "Answer in exactly three sentences, each starting with a different letter of the alphabet, explaining why the sky is blue."
+  - "Convert these requirements into a checklist with checkboxes, ordered by priority (high to medium to low): login page, dark mode, payment integration, user avatars, search bar."
+  - "Produce a valid JSON object describing a book with the keys title, author, year, and genres (an array). Output ONLY the JSON, no surrounding prose. Book: Dune by Frank Herbert, 1965, science fiction."
+  - "Given the input 'The quick brown fox', output a single line with the words reversed and separated by hyphens. Nothing else."
+  - "Write a haiku (5-7-5 syllables) about autumn, followed by a one-line explanation of the syllable count you used."
+  - "Classify each of these as 'fruit' or 'vegetable' in a two-column aligned list: tomato, carrot, apple, cucumber, strawberry, pumpkin."
+  - "Summarize the rules of chess in under 60 words while mentioning castling, en passant, and checkmate."

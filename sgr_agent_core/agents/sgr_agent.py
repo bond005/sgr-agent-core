@@ -46,15 +46,13 @@ class SGRAgent(BaseAgent):
 
     async def _reasoning_phase(self) -> NextStepToolStub:
         phase_id = f"{self._context.iteration}-reasoning"
-        async with self.openai_client.chat.completions.stream(
+        completion = await self._llm_call(
+            "reasoning",
             response_format=await self._prepare_tools(),
             messages=await self._prepare_context(),
             **self.config.llm.to_openai_client_kwargs(),
-        ) as stream:
-            async for event in stream:
-                if event.type == "chunk":
-                    self.streaming_generator.add_chunk(event.chunk, phase_id)
-        reasoning: NextStepToolStub = (await stream.get_final_completion()).choices[0].message.parsed  # type: ignore
+        )
+        reasoning: NextStepToolStub = completion.choices[0].message.parsed  # type: ignore
         # we are not fully sure if it should be in conversation or not. Looks like not necessary data
         # self.conversation.append({"role": "assistant", "content": reasoning.model_dump_json(exclude={"function"})})
 

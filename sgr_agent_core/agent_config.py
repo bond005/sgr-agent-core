@@ -1,11 +1,12 @@
 import logging
 import sys
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import ClassVar
 
 import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from sgr_agent_core._compat import Self
 from sgr_agent_core.agent_definition import AgentConfig, Definitions
 
 logger = logging.getLogger(__name__)

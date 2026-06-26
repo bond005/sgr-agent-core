@@ -1,0 +1,12 @@
+scenario: rewriter
+description: Style transfer, paraphrasing, tone adjustment, and simplification tasks.
+seeds:
+  - "Rewrite the following sentence in a formal academic tone: 'The company totally messed up the launch and lost a bunch of customers.'"
+  - "Paraphrase this paragraph in two different styles - one playful and one journalistic. Original: The new policy requires all employees to return to the office four days a week, sparking debate among staff."
+  - "Simplify this medical text so a twelve-year-old could understand it: 'The patient presented with acute localized abdominal pain in the right lower quadrant, suggestive of appendicitis.'"
+  - "Rewrite this product review to be constructive and polite instead of angry: 'Worst purchase ever, broke after two days, total garbage, do not buy.'"
+  - "Convert this passive-voice paragraph into active voice without changing the meaning: 'The report was written by the analyst and was reviewed by the manager before it was submitted to the board.'"
+  - "Rewrite the following technical explanation for a non-technical executive audience in under 60 words: 'We migrated the monolith to a microservices architecture using Kubernetes, reducing deployment time from hours to minutes.'"
+  - "Change the tone of this email from demanding to collaborative: 'I need this report by tomorrow morning, no excuses.'"
+  - "Rewrite this fairy-tale opening in a hard-boiled detective style: 'Once upon a time, in a faraway kingdom, a young princess lived in a tall castle.'"
+  - "Take this bulleted list and turn it into a flowing paragraph with smooth transitions: fast loading, mobile-friendly design, secure login, easy checkout, fast support."

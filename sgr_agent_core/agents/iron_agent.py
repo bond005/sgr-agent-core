@@ -115,28 +115,23 @@ TOOL GENERATION DEBUG
         instantiator = ToolInstantiator(tool_class)
 
         for attempt in range(max_retries):
-            async with self.openai_client.chat.completions.stream(
+            completion = await self._llm_call(
+                "generate",
                 messages=messages + [{"role": "user", "content": instantiator.generate_format_prompt()}],
                 **self.config.llm.to_openai_client_kwargs(),
-            ) as stream:
-                phase_id = f"{self._context.iteration}-generate"
-                async for event in stream:
-                    if event.type == "chunk":
-                        self.streaming_generator.add_chunk(event.chunk, phase_id)
-
-                completion = await stream.get_final_completion()
-                content = completion.choices[0].message.content
-                try:
-                    tool_instance = instantiator.build_model(content)
-                    return tool_instance
-                except ValueError:
-                    continue
-                finally:
-                    self._log_tool_instantiator(
-                        instantiator=instantiator,
-                        attempt=attempt + 1,
-                        max_retries=max_retries,
-                    )
+            )
+            content = completion.choices[0].message.content
+            try:
+                tool_instance = instantiator.build_model(content)
+                return tool_instance
+            except ValueError:
+                continue
+            finally:
+                self._log_tool_instantiator(
+                    instantiator=instantiator,
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                )
 
         raise ValueError(
             f"Failed to parse {tool_class.__name__} after {max_retries} attempts. "

@@ -13,6 +13,7 @@ from sgr_agent_core.agent_config import GlobalConfig
 from sgr_agent_core.agent_definition import (
     AgentConfig,
     AgentDefinition,
+    DatasetRecordingConfig,
     ExecutionConfig,
     LLMConfig,
     PromptsConfig,
@@ -63,6 +64,7 @@ __all__ = [
     "LLMConfig",
     "PromptsConfig",
     "ExecutionConfig",
+    "DatasetRecordingConfig",
     "GlobalConfig",
     # Next step tools
     "NextStepToolStub",

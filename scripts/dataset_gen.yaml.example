@@ -1,0 +1,166 @@
+# SGR Agent Core - Dataset Generation Config Template
+# Teacher: GLM-5.2 (OpenAI-compatible Z.ai API).
+# SECURITY: this file contains NO secrets. API keys are injected at runtime from
+# environment variables via ${VAR} sentinels (expanded in memory by the driver):
+#   ${ZAI_API_KEY}     -> export ZAI_API_KEY=...     (required)
+#   ${TAVILY_API_KEY}  -> export TAVILY_API_KEY=...  (required for search scenarios)
+# Never put real keys here. See scripts/generate_dataset.sh.
+
+# Teacher LLM
+llm:
+  api_key: "${ZAI_API_KEY}"
+  base_url: "https://api.z.ai/api/paas/v4/"
+  model: "glm-5.2"
+  max_tokens: 8000
+  temperature: 0.4
+  enable_thinking: true   # richer reasoning_content captured for distillation
+
+# Execution (global defaults; per-agent overrides below)
+execution:
+  max_iterations: 8
+  max_clarifications: 3
+  mcp_context_limit: 15000
+  logs_dir: ""            # disable per-agent JSON logs during generation
+  reports_dir: "scripts/reports"
+
+# Dataset recording (distillation)
+dataset:
+  enabled: true
+  output_dir: "scripts/dataset"
+  modes: ["raw", "trajectory"]
+  include_reasoning: true
+  cot_source: "sgr_reasoning"
+  teacher_model: "glm-5.2"
+
+# No MCP servers during generation (avoid extra network latency)
+mcp:
+  mcpServers: {}
+
+# Global tool config (search settings). Per-agent inline overrides win.
+# api_key/tavily_api_key are injected from env at runtime (no secrets stored here).
+tools:
+  web_search_tool:
+    engine: "tavily"
+    api_key: "${TAVILY_API_KEY}"
+    max_results: 8
+    max_searches: 5
+  extract_page_content_tool:
+    tavily_api_key: "${TAVILY_API_KEY}"
+    tavily_api_base_url: "https://api.tavily.com"
+    content_limit: 3000
+
+
+# ---------------------------------------------------------------------------
+# Scenario agents. model/agent name == scenario name == role tag.
+# Toolkits contain ACTION tools only (ReasoningTool is added automatically by
+# SGR* agents). system_prompt_str avoids literal { } to stay format-safe.
+# Each prompt instructs the agent to answer in the user's language, so the
+# generated trajectory language matches the seed language (seeds/<lang>/).
+# ---------------------------------------------------------------------------
+agents:
+  factual_qa:
+    base_class: "sgr_agent_core.agents.sgr_tool_calling_agent.SGRToolCallingAgent"
+    role: "factual_qa"
+    prompts:
+      system_prompt_str: "You are a precise factual research assistant. Answer the user's question using accurate, up-to-date information from the web. Use the search and extraction tools to verify facts from authoritative sources before answering. Keep the answer concise and cite sources. When the fact is verified, deliver it via the final answer tool. Always respond in the same language as the user's request."
+    execution:
+      max_iterations: 5
+    tools:
+      - web_search_tool:
+          max_searches: 3
+      - extract_page_content_tool
+      - final_answer_tool
+
+  deep_research:
+    base_class: "sgr_agent_core.agents.sgr_tool_calling_agent.SGRToolCallingAgent"
+    role: "deep_research"
+    prompts:
+      system_prompt_str: "You are an expert research analyst performing deep, multi-source investigations. Plan your research first, then search broadly, extract content from the most relevant pages, and synthesize findings across sources. Cross-check quantitative claims against at least two independent sources. Reason step by step about what information is still missing before proceeding. When the investigation is complete, produce a thorough, well-structured and well-cited final report or answer. Always respond in the same language as the user's request."
+    execution:
+      max_iterations: 14
+    tools:
+      - generate_plan_tool
+      - adapt_plan_tool
+      - web_search_tool:
+          max_results: 10
+          max_searches: 8
+      - extract_page_content_tool:
+          content_limit: 4000
+      - create_report_tool
+      - final_answer_tool
+
+  summarizer:
+    base_class: "sgr_agent_core.agents.sgr_tool_calling_agent.SGRToolCallingAgent"
+    role: "summarizer"
+    prompts:
+      system_prompt_str: "You are an expert summarizer. Read the source(s) the user provides or points to via URL, extract the key information, and produce well-structured, multi-level summaries. Follow the user's requested structure exactly (abstract, bullet points, TL;DR, hierarchical sections, reading levels). Keep summaries faithful to the source and add no unsupported claims. Deliver the final summary via the final answer tool. Always respond in the same language as the user's request."
+    execution:
+      max_iterations: 8
+    tools:
+      - extract_page_content_tool:
+          content_limit: 6000
+      - create_report_tool
+      - final_answer_tool
+
+  creative_writer:
+    base_class: "sgr_agent_core.agents.tool_calling_agent.ToolCallingAgent"
+    role: "creative_writer"
+    prompts:
+      system_prompt_str: "You are a versatile creative writer. Follow the user's creative brief precisely: respect the requested format, length, tone, point of view, and any constraints such as poetic form or target audience. Write original, vivid, and coherent prose. Place the complete finished piece inside the answer field of the final answer tool. Always respond in the same language as the user's request."
+    execution:
+      max_iterations: 3
+    tools:
+      - final_answer_tool
+
+  data_analyst:
+    base_class: "sgr_agent_core.agents.sgr_tool_calling_agent.SGRToolCallingAgent"
+    role: "data_analyst"
+    prompts:
+      system_prompt_str: "You are a careful data analyst. Answer questions about CSV datasets by inspecting the data and computing the requested metrics with the analysis tool. Always ground numerical answers in the data, show the relevant intermediate results, and briefly interpret what they mean. When the analysis is complete, provide a clear answer with the supporting figures via the final answer tool. Always respond in the same language as the user's request."
+    execution:
+      max_iterations: 8
+    tools:
+      - pandas_analysis_tool:
+          base_class: "tools.pandas_analysis_tool.PandasAnalysisTool"
+          workspace_path: "scripts/data"
+      - final_answer_tool
+
+  coder:
+    base_class: "sgr_agent_core.agents.tool_calling_agent.ToolCallingAgent"
+    role: "coder"
+    prompts:
+      system_prompt_str: "You are a senior software engineer. Produce correct, idiomatic, well-explained code in the requested language. Include type hints, docstrings, and brief comments where they aid clarity. Explain non-obvious decisions and complexity. Place the complete solution (code plus any explanation) inside the answer field of the final answer tool. Always respond in the same language as the user's request."
+    execution:
+      max_iterations: 3
+    tools:
+      - final_answer_tool
+
+  math_reasoner:
+    base_class: "sgr_agent_core.agents.sgr_tool_calling_agent.SGRToolCallingAgent"
+    role: "math_reasoner"
+    prompts:
+      system_prompt_str: "You are a meticulous mathematician. Solve each problem with complete, rigorous, step-by-step reasoning shown explicitly. State assumptions, methods, and each inference. Provide a clearly marked final answer at the end. When the derivation is complete, deliver it in full via the final answer tool. Always respond in the same language as the user's request."
+    execution:
+      max_iterations: 5
+    tools:
+      - final_answer_tool
+
+  instruction_following:
+    base_class: "sgr_agent_core.agents.tool_calling_agent.ToolCallingAgent"
+    role: "instruction_following"
+    prompts:
+      system_prompt_str: "You are an instruction-following specialist. Follow every constraint in the user's request exactly and completely: format, length, structure, ordering, and any content restrictions. If the request specifies output-only content, output nothing else. Place the exact required output inside the answer field of the final answer tool. Always respond in the same language as the user's request."
+    execution:
+      max_iterations: 3
+    tools:
+      - final_answer_tool
+
+  rewriter:
+    base_class: "sgr_agent_core.agents.tool_calling_agent.ToolCallingAgent"
+    role: "rewriter"
+    prompts:
+      system_prompt_str: "You are a skilled editor. Rewrite the user's text according to the requested transformation - tone, style, audience, voice, or simplification - while preserving the original meaning and key details. Match the requested length. Place the rewritten text inside the answer field of the final answer tool. Always respond in the same language as the user's request."
+    execution:
+      max_iterations: 3
+    tools:
+      - final_answer_tool

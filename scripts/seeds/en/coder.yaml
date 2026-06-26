@@ -1,0 +1,12 @@
+scenario: coder
+description: Code generation, explanation, and refactoring tasks across languages. No external tools needed.
+seeds:
+  - "Write a Python function that takes a list of integers and returns the length of the longest strictly increasing subsequence. Include type hints and a docstring, and explain the algorithm's complexity."
+  - "Refactor the following JavaScript function to be more readable and idiomatic, then explain each change:\nfunction f(a){let r=[];for(let i=0;i<a.length;i++){if(a[i]%2==0){r.push(a[i]*2)}}return r}"
+  - "Explain, with a concrete example, the difference between SQL INNER JOIN and LEFT JOIN. Write two queries on hypothetical 'orders' and 'customers' tables."
+  - "Write a thread-safe singleton in modern C++ (C++17) and explain why double-checked locking alone is not safe without std::call_once or atomic operations."
+  - "Implement a binary search tree in Python with insert, search, and in-order traversal methods. Add unit tests using pytest."
+  - "Convert this Python snippet to idiomatic Rust and explain the ownership/borrowing decisions: data = [1,2,3]; squared = [x*x for x in data]; print(sum(squared))"
+  - "Write a regex that matches valid IPv4 addresses (no leading zeros) and explain each component. Provide three matching and three non-matching examples."
+  - "Write a Bash script that recursively finds all '*.log' files older than 30 days in a directory passed as an argument and prints their total size in human-readable form."
+  - "Explain what a memory leak is in the context of garbage-collected languages like Python or Go, and show a minimal example that causes one, plus the fix."

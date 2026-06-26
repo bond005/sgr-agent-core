@@ -1,0 +1,16 @@
+country,year,population_millions,gdp_per_capita,continent
+Germany,2023,84.4,52000,Europe
+France,2023,68.0,44000,Europe
+USA,2023,333.3,76000,North America
+Canada,2023,39.0,53000,North America
+Brazil,2023,215.3,9000,South America
+Japan,2023,124.5,34000,Asia
+India,2023,1428.6,2500,Asia
+China,2023,1411.8,12000,Asia
+Nigeria,2023,223.8,2200,Africa
+Egypt,2023,112.7,4300,Africa
+Australia,2023,26.4,65000,Oceania
+Germany,2000,82.2,28000,Europe
+USA,2000,282.2,36000,North America
+India,2000,1059.6,440,Asia
+Japan,2000,126.8,37000,Asia

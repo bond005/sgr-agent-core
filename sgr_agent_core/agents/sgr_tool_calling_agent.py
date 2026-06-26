@@ -43,16 +43,13 @@ class SGRToolCallingAgent(BaseAgent):
 
     async def _reasoning_phase(self) -> ReasoningTool:
         phase_id = f"{self._context.iteration}-reasoning"
-        async with self.openai_client.chat.completions.stream(
+        final_completion = await self._llm_call(
+            "reasoning",
             messages=await self._prepare_context(),
             tools=[pydantic_function_tool(self.ReasoningTool, name=self.ReasoningTool.tool_name)],
             tool_choice=self.tool_choice,
             **self.config.llm.to_openai_client_kwargs(),
-        ) as stream:
-            async for event in stream:
-                if event.type == "chunk":
-                    self.streaming_generator.add_chunk(event.chunk, phase_id)
-            final_completion = await stream.get_final_completion()
+        )
         reasoning: ReasoningTool = final_completion.choices[0].message.tool_calls[0].function.parsed_arguments
         self.streaming_generator.add_tool_call(phase_id, reasoning)
         self.conversation.append(
@@ -79,16 +76,13 @@ class SGRToolCallingAgent(BaseAgent):
 
     async def _select_action_phase(self, reasoning: ReasoningTool) -> BaseTool:
         phase_id = f"{self._context.iteration}-action"
-        async with self.openai_client.chat.completions.stream(
+        completion = await self._llm_call(
+            "action",
             messages=await self._prepare_context(),
             tools=await self._prepare_tools(),
             tool_choice=self.tool_choice,
             **self.config.llm.to_openai_client_kwargs(),
-        ) as stream:
-            async for event in stream:
-                if event.type == "chunk":
-                    self.streaming_generator.add_chunk(event.chunk, phase_id)
-            completion = await stream.get_final_completion()
+        )
         try:
             tool = completion.choices[0].message.tool_calls[0].function.parsed_arguments
         except (IndexError, AttributeError, TypeError):

@@ -18,6 +18,17 @@ execution:
   logs_dir: "logs"  # Directory for saving agent execution logs
   reports_dir: "reports"  # Directory for saving agent reports
 
+# Dataset Recording (for distillation - synthesizes an SFT dataset from a teacher LLM)
+# When enabled, every LLM call and full agent trajectory is recorded as JSONL.
+# Convert the result to a sharegpt dataset with: `sgr-dataset <output_dir> -o <out>`
+# dataset:
+#   enabled: true                       # Master switch
+#   output_dir: "dataset"               # Where llm_calls.jsonl / trajectories.jsonl are written
+#   modes: ["raw", "trajectory"]        # "raw" = per LLM call, "trajectory" = full agent run
+#   include_reasoning: true             # Render the SGR reasoning step as an assistant message
+#   cot_source: "sgr_reasoning"         # "sgr_reasoning" | "reasoning_content" | "merged"
+#   teacher_model: "glm-5.2"            # Teacher model tag (defaults to llm.model)
+
 # Prompts Configuration
 # prompts:
 #   # Option 1: Use file paths (absolute or relative to project root)
@@ -73,6 +84,7 @@ tools:
 agents:
   custom_research_agent:
     base_class: "sgr_agent_core.agents.sgr_agent.SGRAgent"
+    # role: "researcher"  # Optional: identity tag used for logging and dataset tagging
     # Optional: Override LLM settings for this agent
     llm:
       model: "gpt-4o"
@@ -81,6 +93,16 @@ agents:
       # api_key: "your-custom-api-key"  # Optional: use different API key
       # base_url: "https://api.openai.com/v1"  # Optional: use different endpoint
       # proxy: "http://127.0.0.1:8080"  # Optional: use proxy
+
+    # Teacher model for dataset distillation, e.g. GLM-5.2 (OpenAI-compatible API):
+    #   llm:
+    #     base_url: "https://api.z.ai/api/paas/v4/"
+    #     model: "glm-5.2"
+    #     enable_thinking: false   # disable thinking for reliable structured output (SGRAgent)
+    #   role: "pediatric_advisor"
+    #   dataset:
+    #     enabled: true
+    #     output_dir: "dataset/pediatric_advisor"
 
     # Optional: Execution configuration
     execution:

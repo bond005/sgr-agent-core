@@ -1,0 +1,12 @@
+scenario: math_reasoner
+description: Step-by-step mathematical reasoning. Show the full derivation, then the final answer.
+seeds:
+  - "Solve the integral of x*ln(x) dx by parts. Show every step of the integration and state the domain of validity."
+  - "A bag contains 5 red, 3 blue, and 2 green marbles. Three marbles are drawn without replacement. What is the probability that they are all different colors? Show the combinatorial reasoning."
+  - "Find all real solutions to the equation x^4 - 5x^2 + 4 = 0 and explain the method used."
+  - "Prove by induction that the sum of the first n positive integers is n(n+1)/2. State the base case, inductive hypothesis, and inductive step explicitly."
+  - "A train travels from A to B at 60 km/h and returns from B to A at 90 km/h. What is the average speed for the entire round trip? Explain why it is not 75 km/h."
+  - "Determine whether the series sum from n=1 to infinity of 1/(n*(n+1)) converges, and if so, compute its exact sum."
+  - "Two fair six-sided dice are rolled. What is the probability that the sum is prime? Enumerate the favorable outcomes."
+  - "Solve the system of equations: 2x + 3y = 16 and 3x - y = 3. Show the substitution method step by step."
+  - "What is the derivative of f(x) = (sin(x))^2 * e^(2x)? Apply the product and chain rules and simplify."

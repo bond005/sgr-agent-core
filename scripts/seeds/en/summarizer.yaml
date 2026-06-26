@@ -1,0 +1,11 @@
+scenario: summarizer
+description: Multi-level summarization of provided text. The agent extracts key points and produces structured summaries.
+seeds:
+  - "Summarize the following article into a one-paragraph abstract, a five-bullet key-points list, and a one-sentence TL;DR: https://en.wikipedia.org/wiki/Transformer_(deep_learning_architecture)"
+  - "Read the content at https://en.wikipedia.org/wiki/Climate_change_mitigation and produce: (1) an executive summary for policymakers, (2) a technical summary of the main mitigation strategies with their estimated impact."
+  - "Provide a hierarchical summary of https://en.wikipedia.org/wiki/French_Revolution: a brief overview, then causes, key events, and consequences as separate sections."
+  - "Summarize https://en.wikipedia.org/wiki/Quantum_computing at three reading levels: for a child, for a high-school student, and for a computer-science graduate."
+  - "Extract and summarize the main arguments from the content at https://en.wikipedia.org/wiki/Universal_basic_income, grouping them into 'arguments for' and 'arguments against' with the strongest two points each."
+  - "Produce a chronological summary of milestones from https://en.wikipedia.org/wiki/History_of_artificial_intelligence and highlight the three most consequential breakthroughs with justification."
+  - "Summarize https://en.wikipedia.org/wiki/Circular_economy into a structured briefing: definition, core principles, business benefits, and implementation challenges."
+  - "Create a multi-level summary of https://en.wikipedia.org/wiki/Human_Genome_Project covering scientific goals, methods, major findings, and ethical implications."

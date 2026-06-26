@@ -15,7 +15,7 @@ authors = [
     {name = "Shadekss"},
     {name = "mixaill76"}
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -23,6 +23,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -37,6 +38,7 @@ dependencies = [
     "python-dateutil>=2.8.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.10.1",
+    "typing_extensions>=4.0.0",
     "openai>=1.0.0",
     "httpx[socks]>=0.25.0",
     # Search and research
@@ -66,6 +68,7 @@ Documentation = "https://vamplabai.github.io/sgr-agent-core/"
 [project.scripts]
 sgr = "sgr_agent_core.server.__main__:main"
 sgrsh = "sgr_agent_core.cli.__main__:main"
+sgr-dataset = "sgr_agent_core.cli.dataset_export:main"
 
 [project.optional-dependencies]
 dev = [
@@ -109,7 +112,7 @@ version = {attr = "sgr_agent_core.__version__"}
 "sgr_agent_core" = ["**/*.yaml", "**/*.yml", "**/*.json", "**/*.txt"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py310"
 line-length = 120
 
 [tool.ruff.lint]

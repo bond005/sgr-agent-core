@@ -4,11 +4,13 @@ import logging
 import os
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Literal, Self, Union
+from typing import Any, Literal, Union
 
 import yaml
 from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel, Field, FilePath, ImportString, computed_field, field_validator, model_validator
+
+from sgr_agent_core._compat import Self
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +61,21 @@ class LLMConfig(BaseModel, extra="allow"):
     )
 
     def to_openai_client_kwargs(self) -> dict[str, Any]:
-        return self.model_dump(exclude={"api_key", "base_url", "proxy"})
+        """Build kwargs for ``chat.completions.stream``/``create``.
+
+        Declared fields (model, max_tokens, temperature, ...) are returned as
+        top-level OpenAI SDK parameters. Any extra field kept via ``extra="allow"``
+        (provider-specific options such as GLM's ``enable_thinking`` or Qwen's
+        ``chat_template_kwargs``) is routed through ``extra_body``, because the
+        OpenAI SDK strictly validates top-level kwargs and rejects unknown ones.
+        """
+        data = self.model_dump(exclude={"api_key", "base_url", "proxy"})
+        declared = set(LLMConfig.model_fields) - {"api_key", "base_url", "proxy"}
+        kwargs = {key: value for key, value in data.items() if key in declared}
+        extra_body = {key: value for key, value in data.items() if key not in declared}
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+        return kwargs
 
 
 class PromptsConfig(BaseModel, extra="allow"):
@@ -144,6 +160,34 @@ class ExecutionConfig(BaseModel, extra="allow"):
     reports_dir: str = Field(default="reports", description="Directory for saving reports")
 
 
+class DatasetRecordingConfig(BaseModel, extra="allow"):
+    """Settings for recording LLM interactions into a distillation dataset.
+
+    Records are written as JSONL. Two granularities are supported:
+    - ``raw``: one record per LLM call (request + response), into ``llm_calls.jsonl``
+    - ``trajectory``: one record per full agent run (sharegpt-style), into ``trajectories.jsonl``
+    """
+
+    enabled: bool = Field(default=False, description="Enable dataset recording")
+    output_dir: str = Field(default="dataset", description="Directory for the JSONL output files")
+    modes: list[Literal["raw", "trajectory"]] = Field(
+        default_factory=lambda: ["raw", "trajectory"],
+        description="Which record granularities to write",
+    )
+    include_reasoning: bool = Field(
+        default=True,
+        description="In trajectory records, render the SGR reasoning step as a separate assistant message",
+    )
+    cot_source: Literal["reasoning_content", "sgr_reasoning", "merged"] = Field(
+        default="sgr_reasoning",
+        description="Source of the chain-of-thought used during export",
+    )
+    teacher_model: str | None = Field(
+        default=None,
+        description="Override the teacher model tag (defaults to llm.model)",
+    )
+
+
 class AgentConfig(BaseModel, extra="allow"):
     """Agent configuration with all settings.
 
@@ -155,6 +199,13 @@ class AgentConfig(BaseModel, extra="allow"):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig, description="Execution settings")
     prompts: PromptsConfig = Field(default_factory=PromptsConfig, description="Prompts settings")
     mcp: MCPConfig = Field(default_factory=MCPConfig, description="MCP settings")
+    dataset: DatasetRecordingConfig = Field(
+        default_factory=DatasetRecordingConfig, description="Distillation dataset recording settings"
+    )
+    role: str | None = Field(
+        default=None,
+        description="Role/identity tag of the agent (used for logging and dataset tagging)",
+    )
 
 
 class ToolDefinition(BaseModel, extra="allow"):
