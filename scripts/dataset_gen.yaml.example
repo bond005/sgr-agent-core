@@ -13,7 +13,12 @@ llm:
   model: "glm-5.2"
   max_tokens: 8000
   temperature: 0.4
-  enable_thinking: true   # richer reasoning_content captured for distillation
+  # Default OFF. This is an inference-time toggle only (it does not affect the
+  # agent cycle); it changes whether GLM emits a reasoning_content trace. The
+  # distillation CoT comes from SGR reasoning (cot_source below), so thinking
+  # is not needed. Enable via the driver: ./scripts/generate_dataset.sh --enable-thinking
+  # to also capture raw reasoning_content (for later cot_source=reasoning_content).
+  enable_thinking: false
 
 # Execution (global defaults; per-agent overrides below)
 execution:

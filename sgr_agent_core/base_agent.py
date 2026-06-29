@@ -21,6 +21,8 @@ from sgr_agent_core.stream import BaseStreamingGenerator, OpenAIStreamingGenerat
 from sgr_agent_core.tools import (
     BaseTool,
     ClarificationTool,
+    CreateReportTool,
+    FinalAnswerTool,
     ReasoningTool,
 )
 
@@ -43,8 +45,9 @@ def _json_safe(obj: Any) -> Any:
 def _serialize_response_format(response_format: Any) -> Any:
     """Serialize a ``response_format`` argument into a JSON-safe description.
 
-    Pydantic model classes (used by SGRAgent structured output) are described via
-    their JSON schema; everything else is best-effort serialized.
+    Pydantic model classes (used by SGRAgent structured output) are
+    described via their JSON schema; everything else is best-effort
+    serialized.
     """
     if response_format is None:
         return None
@@ -209,7 +212,8 @@ class BaseAgent(AgentRegistryMixin):
         return def_name or self.name
 
     def _get_or_create_recorder(self) -> DatasetRecorder | None:
-        """Return the shared dataset recorder, creating it if recording is enabled.
+        """Return the shared dataset recorder, creating it if recording is
+        enabled.
 
         Recording is enabled when the agent's ``dataset`` config has ``enabled=True``.
         A single shared recorder is reused across agents (module-level singleton).
@@ -453,16 +457,36 @@ class BaseAgent(AgentRegistryMixin):
     async def _prepare_tools(self) -> list[ChatCompletionFunctionToolParam]:
         """Prepare available tools for the current agent state and progress.
 
+        When the iteration budget is exhausted, the toolkit is restricted to the
+        finalization tools (``CreateReportTool`` and ``FinalAnswerTool``) that
+        are part of the toolkit, falling back to ``FinalAnswerTool`` alone. This
+        forces the agent to produce an answer from what it has gathered so far
+        instead of crashing the run and discarding all progress.
+
         Note: Override this method to change the tool setup or conditions for tool
         usage.
 
         Returns a list of ChatCompletionFunctionToolParam based
         available tools.
         """
+
         tools = set(self.toolkit)
         if self._context.iteration >= self.config.execution.max_iterations:
-            raise RuntimeError("Max iterations reached")
+            tools = self._restrict_to_finalization_tools(tools)
         return [pydantic_function_tool(tool, name=tool.tool_name) for tool in tools]
+
+    def _restrict_to_finalization_tools(self, tools: set[Type[BaseTool]]) -> set[Type[BaseTool]]:
+        """Restrict ``tools`` to the finalization tools available in the
+        toolkit.
+
+        Used when the iteration budget is reached so the agent is forced to
+        finish gracefully. Keeps ``CreateReportTool``/``FinalAnswerTool`` when
+        present and always falls back to ``FinalAnswerTool`` so the run can
+        complete instead of failing.
+        """
+        finalization = {CreateReportTool, FinalAnswerTool}
+        kept = {tool for tool in tools if tool in finalization}
+        return kept or {FinalAnswerTool}
 
     async def _reasoning_phase(self) -> ReasoningTool:
         """Call LLM to decide next action based on current context."""

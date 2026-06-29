@@ -498,11 +498,13 @@ class TestAgentFactoryClientCreation:
 
     @pytest.mark.asyncio
     async def test_stream_request_with_unknown_parameter_routed_to_extra_body(self):
-        """Provider-specific parameters are routed into extra_body and do NOT raise.
+        """Provider-specific parameters are routed into extra_body and do NOT
+        raise.
 
-        Previously an unknown top-level kwarg made the OpenAI SDK raise TypeError;
-        now any extra field on LLMConfig (extra='allow') is passed via extra_body,
-        which the SDK accepts, so the call succeeds.
+        Previously an unknown top-level kwarg made the OpenAI SDK raise
+        TypeError; now any extra field on LLMConfig (extra='allow') is
+        passed via extra_body, which the SDK accepts, so the call
+        succeeds.
         """
         from sgr_agent_core.agents.tool_calling_agent import ToolCallingAgent
 

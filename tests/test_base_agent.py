@@ -15,7 +15,7 @@ import pytest
 from sgr_agent_core.agent_definition import AgentConfig, ExecutionConfig, LLMConfig, PromptsConfig
 from sgr_agent_core.base_agent import BaseAgent
 from sgr_agent_core.models import AgentContext, AgentStatesEnum
-from sgr_agent_core.tools import BaseTool, ReasoningTool, WebSearchTool
+from sgr_agent_core.tools import BaseTool, CreateReportTool, FinalAnswerTool, ReasoningTool, WebSearchTool
 from tests.conftest import create_test_agent
 
 
@@ -427,6 +427,98 @@ class TestBaseAgentAbstractMethods:
 
         with pytest.raises(NotImplementedError):
             await agent._action_phase(tool)
+
+
+class TestBaseAgentPrepareToolsMaxIterations:
+    """Tests for graceful toolkit restriction when max_iterations is reached.
+
+    Previously _prepare_tools() raised RuntimeError("Max iterations
+    reached") which crashed the agent run and discarded all progress. It
+    now restricts the toolkit to the finalization tools
+    (CreateReportTool/FinalAnswerTool) so the agent is forced to produce
+    an answer instead of failing.
+    """
+
+    @pytest.mark.asyncio
+    async def test_below_max_iterations_returns_all_tools(self):
+        """Under the iteration limit the full toolkit is returned unchanged."""
+        agent = create_test_agent(
+            BaseAgent,
+            task_messages=[{"role": "user", "content": "Test"}],
+            execution_config=ExecutionConfig(max_iterations=5, max_clarifications=3),
+            toolkit=[WebSearchTool, CreateReportTool, FinalAnswerTool],
+        )
+        agent._context.iteration = 4  # one below the limit
+
+        tools = await agent._prepare_tools()
+
+        names = {t["function"]["name"] for t in tools}
+        assert names == {"websearchtool", "createreporttool", "finalanswertool"}
+
+    @pytest.mark.asyncio
+    async def test_at_max_iterations_restricts_to_finalization_tools(self):
+        """At the limit only CreateReportTool + FinalAnswerTool are kept."""
+        agent = create_test_agent(
+            BaseAgent,
+            task_messages=[{"role": "user", "content": "Test"}],
+            execution_config=ExecutionConfig(max_iterations=5, max_clarifications=3),
+            toolkit=[WebSearchTool, CreateReportTool, FinalAnswerTool],
+        )
+        agent._context.iteration = 5  # == max_iterations
+
+        tools = await agent._prepare_tools()
+
+        names = {t["function"]["name"] for t in tools}
+        assert names == {"createreporttool", "finalanswertool"}
+
+    @pytest.mark.asyncio
+    async def test_at_max_iterations_does_not_raise(self):
+        """Reaching the iteration limit must not raise RuntimeError."""
+        agent = create_test_agent(
+            BaseAgent,
+            task_messages=[{"role": "user", "content": "Test"}],
+            execution_config=ExecutionConfig(max_iterations=2, max_clarifications=3),
+            toolkit=[WebSearchTool, CreateReportTool, FinalAnswerTool],
+        )
+        agent._context.iteration = 2
+
+        # Should return a list, not raise.
+        tools = await agent._prepare_tools()
+        assert isinstance(tools, list)
+        assert len(tools) >= 1
+
+    @pytest.mark.asyncio
+    async def test_at_max_iterations_falls_back_to_final_answer_only(self):
+        """Without CreateReportTool the limit keeps only FinalAnswerTool."""
+        agent = create_test_agent(
+            BaseAgent,
+            task_messages=[{"role": "user", "content": "Test"}],
+            execution_config=ExecutionConfig(max_iterations=3, max_clarifications=3),
+            toolkit=[WebSearchTool, FinalAnswerTool],
+        )
+        agent._context.iteration = 3
+
+        tools = await agent._prepare_tools()
+
+        names = {t["function"]["name"] for t in tools}
+        assert names == {"finalanswertool"}
+
+    @pytest.mark.asyncio
+    async def test_at_max_iterations_no_final_tool_still_returns_final_answer(self):
+        """Even a toolkit without finalization tools yields FinalAnswerTool at
+        the limit, so the agent can always finish gracefully."""
+        agent = create_test_agent(
+            BaseAgent,
+            task_messages=[{"role": "user", "content": "Test"}],
+            execution_config=ExecutionConfig(max_iterations=3, max_clarifications=3),
+            toolkit=[WebSearchTool],
+        )
+        agent._context.iteration = 3
+
+        tools = await agent._prepare_tools()
+
+        names = {t["function"]["name"] for t in tools}
+        assert names == {"finalanswertool"}
 
 
 class TestBaseAgentPrepareContext:

@@ -132,6 +132,85 @@ class TestToolsInitialization:
         assert tool.continue_research is True
 
 
+class TestReasoningToolLimits:
+    """ReasoningTool text fields truncate instead of raising ValidationError.
+
+    Regression guard: GLM-5.2 (especially with ``enable_thinking`` enabled)
+    can emit ``current_situation``/``plan_status`` longer than the schema
+    ``maxLength``. OpenAI structured-outputs parsing validates the streamed
+    tool arguments against the Pydantic model on the client side, so an
+    over-long field used to crash the whole agent run. The fields must
+    instead truncate to their limit.
+    """
+
+    SITUATION_LIMIT = 1200
+    PLAN_LIMIT = 600
+
+    def test_truncates_overlong_text_fields(self):
+        """Over-long current_situation/plan_status are truncated, not
+        rejected."""
+        long_situation = "a" * (self.SITUATION_LIMIT + 500)
+        long_plan = "b" * (self.PLAN_LIMIT + 200)
+
+        tool = ReasoningTool(
+            reasoning_steps=["Step 1", "Step 2"],
+            current_situation=long_situation,
+            plan_status=long_plan,
+            enough_data=False,
+            remaining_steps=["Next"],
+            task_completed=False,
+        )
+
+        assert len(tool.current_situation) == self.SITUATION_LIMIT
+        assert tool.current_situation.endswith("…")
+        assert tool.current_situation != long_situation
+        assert len(tool.plan_status) == self.PLAN_LIMIT
+        assert tool.plan_status.endswith("…")
+        assert tool.plan_status != long_plan
+
+    def test_keeps_short_text_fields_unchanged(self):
+        """Values within the limit pass through untouched."""
+        situation = "Short situation within the limit."
+        plan = "Short plan."
+
+        tool = ReasoningTool(
+            reasoning_steps=["Step 1", "Step 2"],
+            current_situation=situation,
+            plan_status=plan,
+            enough_data=False,
+            remaining_steps=["Next"],
+            task_completed=False,
+        )
+
+        assert tool.current_situation == situation
+        assert len(tool.current_situation) <= self.SITUATION_LIMIT
+        assert tool.plan_status == plan
+        assert len(tool.plan_status) <= self.PLAN_LIMIT
+
+    def test_model_validate_json_truncates_instead_of_raising(self):
+        """Mirrors how the OpenAI SDK parses streamed tool arguments."""
+        import json
+
+        from pydantic import ValidationError
+
+        payload = json.dumps(
+            {
+                "reasoning_steps": ["Step 1", "Step 2"],
+                "current_situation": "x" * 5000,
+                "plan_status": "y" * 2000,
+                "enough_data": False,
+                "remaining_steps": ["Next"],
+                "task_completed": False,
+            }
+        )
+        try:
+            tool = ReasoningTool.model_validate_json(payload)
+        except ValidationError as e:
+            pytest.fail(f"ReasoningTool must truncate, not raise: {e}")
+        assert len(tool.current_situation) == self.SITUATION_LIMIT
+        assert len(tool.plan_status) == self.PLAN_LIMIT
+
+
 class TestAnswerToolExecution:
     """Tests for AnswerTool execution."""
 

@@ -148,7 +148,7 @@ def _inject_env_secrets(config: GlobalConfig) -> None:
     Secrets (LLM api_key, tool api_key/tavily_api_key, ...) are referenced as
     ``${VAR}`` in the config template and resolved from the environment here, so
     no real key is ever stored on disk. The global ``llm``, every agent's ``llm``,
-    and every tool definition's kwargs are expanded.
+    the global tool kwargs, and every agent's per-tool kwargs are expanded.
     """
     from sgr_agent_core.agent_definition import LLMConfig
 
@@ -159,10 +159,41 @@ def _inject_env_secrets(config: GlobalConfig) -> None:
     for agent_def in config.agents.values():
         for name in list(LLMConfig.model_fields):
             setattr(agent_def.llm, name, _expand_value(getattr(agent_def.llm, name)))
-    # Tool kwargs (extra="allow" fields)
+    # Global tool kwargs (extra="allow" fields)
     for tool_def in config.tools.values():
         for key in list(tool_def.__pydantic_extra__ or {}):
             setattr(tool_def, key, _expand_value(getattr(tool_def, key)))
+    # Per-agent tool kwargs. agent_level_tools_validator copies the global tool
+    # kwargs (including unresolved ${VAR} sentinels) into each agent's
+    # ToolDefinition at config-load time; those copies are NOT reached by the
+    # global loop above and must be expanded here, otherwise the literal sentinel
+    # is sent to the provider (e.g. "${TAVILY_API_KEY}" -> Tavily 401).
+    for agent_def in config.agents.values():
+        for tool_def in agent_def.tools:
+            for key in list(tool_def.__pydantic_extra__ or {}):
+                setattr(tool_def, key, _expand_value(getattr(tool_def, key)))
+
+
+def _apply_thinking_override(config: GlobalConfig, enabled: bool) -> None:
+    """Force the teacher ``enable_thinking`` flag on the global llm and on
+    every per-agent ``llm``.
+
+    ``enable_thinking`` is a provider option kept under ``llm:`` via
+    ``extra="allow"`` and routed to the SDK through ``extra_body``. It is an
+    inference-time toggle (like Qwen's thinking/instruct switch): it only
+    changes whether the model emits a ``reasoning_content`` trace, and does
+    not affect the agent cycle. Because the current distillation CoT comes
+    from SGR reasoning (``cot_source="sgr_reasoning"``), thinking is off by
+    default; callers opt in via ``--enable-thinking`` to also capture raw
+    ``reasoning_content`` for later ``cot_source`` experiments.
+
+    Each ``AgentDefinition`` holds its own merged copy of the llm config
+    (same shape as the secrets handled by ``_inject_env_secrets``), so the
+    override must be written to every per-agent copy too.
+    """
+    setattr(config.llm, "enable_thinking", enabled)
+    for agent_def in config.agents.values():
+        setattr(agent_def.llm, "enable_thinking", enabled)
 
 
 def _search_key_present(config: GlobalConfig) -> bool:
@@ -206,16 +237,20 @@ async def run_generation(
     concurrency: int,
     self_instruct: int,
     seeds_dir: Path,
+    enable_thinking: bool = False,
 ) -> dict[str, Any]:
     """Run the full generation pipeline and return a per-(scenario, language) summary."""
     reset_recorder()
     config = GlobalConfig.from_yaml(config_path)
     _inject_env_secrets(config)
+    _apply_thinking_override(config, enable_thinking)
+    if enable_thinking:
+        logger.info("Teacher enable_thinking=ON (capturing raw reasoning_content)")
+    else:
+        logger.info("Teacher enable_thinking=OFF (default)")
 
     if not config.llm.api_key or "${" in config.llm.api_key:
-        logger.error(
-            "LLM api_key is not resolved. Export the teacher API key, e.g.: export ZAI_API_KEY=..."
-        )
+        logger.error("LLM api_key is not resolved. Export the teacher API key, e.g.: export ZAI_API_KEY=...")
         return {"total": 0, "per_scenario": {}, "trajectories": 0}
 
     has_search = _search_key_present(config)
@@ -295,6 +330,12 @@ def main(argv: list[str] | None = None) -> int:
         default=str(SCRIPTS_DIR / "seeds"),
         help="Root seeds directory containing <lang>/<scenario>.yaml files",
     )
+    parser.add_argument(
+        "--enable-thinking",
+        action="store_true",
+        help="Enable teacher thinking mode (enable_thinking=true) to capture raw "
+        "reasoning_content. Default: disabled (the CoT comes from SGR reasoning).",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     args = parser.parse_args(argv)
 
@@ -331,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
             concurrency=args.concurrency,
             self_instruct=args.self_instruct,
             seeds_dir=seeds_dir,
+            enable_thinking=args.enable_thinking,
         )
     )
 

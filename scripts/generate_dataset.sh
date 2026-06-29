@@ -13,9 +13,16 @@
 #   ./scripts/generate_dataset.sh                       # all scenarios, ~10 prompts each
 #   ./scripts/generate_dataset.sh --scenario coder,creative_writer --limit 5
 #   ./scripts/generate_dataset.sh --scenario list
+#   ./scripts/generate_dataset.sh --enable-thinking     # capture raw reasoning_content
 #
 # Any extra args after the fixed ones are forwarded to generate_dataset.py.
 # Pass --no-export to skip the final sgr-dataset conversion step.
+#
+# Teacher thinking (enable_thinking) is OFF by default: the distillation CoT is
+# taken from SGR reasoning (cot_source=sgr_reasoning), which the agent produces
+# regardless of the model's thinking mode. Pass --enable-thinking to switch the
+# teacher to thinking mode and also record raw reasoning_content in llm_calls.jsonl
+# (useful if you later export with cot_source=reasoning_content).
 
 set -euo pipefail
 

@@ -1,8 +1,26 @@
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from sgr_agent_core.base_tool import SystemBaseTool
+
+# Length budget for the free-text reasoning fields. These limits are kept in the
+# JSON schema (as ``maxLength``) so the model sees a soft hint to stay concise,
+# while the ``mode="before"`` validators below truncate any over-long value
+# instead of raising. This is required because OpenAI structured-outputs parsing
+# validates streamed tool arguments against this Pydantic model on the client
+# side: without truncation a single over-long ``current_situation`` (common with
+# verbose/thinking-enabled models such as GLM-5.2) crashes the whole agent run.
+CURRENT_SITUATION_MAX_LENGTH = 1200
+PLAN_STATUS_MAX_LENGTH = 600
+
+
+def _truncate(value: object, limit: int) -> object:
+    """Truncate a string to ``limit`` chars with an ellipsis; pass through non-
+    string input unchanged (let Pydantic handle type coercion/errors)."""
+    if isinstance(value, str) and len(value) > limit:
+        return value[: limit - 1].rstrip() + "…"
+    return value
 
 
 class ReasoningTool(SystemBaseTool):
@@ -23,11 +41,11 @@ class ReasoningTool(SystemBaseTool):
     # Reasoning and state assessment
     current_situation: str = Field(
         description="Current research situation (2-3 sentences MAX)",
-        max_length=300,
+        max_length=CURRENT_SITUATION_MAX_LENGTH,
     )
     plan_status: str = Field(
         description="Status of current plan (1 sentence)",
-        max_length=150,
+        max_length=PLAN_STATUS_MAX_LENGTH,
     )
     enough_data: bool = Field(
         default=False,
@@ -40,6 +58,16 @@ class ReasoningTool(SystemBaseTool):
         max_length=3,
     )
     task_completed: bool = Field(description="Is the research task finished?")
+
+    @field_validator("current_situation", mode="before")
+    @classmethod
+    def _truncate_current_situation(cls, v: object) -> object:
+        return _truncate(v, CURRENT_SITUATION_MAX_LENGTH)
+
+    @field_validator("plan_status", mode="before")
+    @classmethod
+    def _truncate_plan_status(cls, v: object) -> object:
+        return _truncate(v, PLAN_STATUS_MAX_LENGTH)
 
     async def __call__(self, *args, **kwargs):
         return ""

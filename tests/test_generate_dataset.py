@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from scripts.generate_dataset import (
+    _apply_thinking_override,
     _inject_env_secrets,
     _search_key_present,
     discover_languages,
@@ -120,6 +121,49 @@ class TestInjectEnvSecrets:
         _inject_env_secrets(config)
         assert tool_def.api_key == "tvly-real-key"
 
+    def test_expands_per_agent_tool_kwargs(self, tmp_path, monkeypatch):
+        # Regression: agent_level_tools_validator copies the global tool kwargs
+        # (including the unresolved ${VAR} sentinel) into each agent's own
+        # ToolDefinition at load time. _inject_env_secrets must expand those
+        # per-agent copies too, otherwise the literal sentinel (e.g.
+        # "${TAVILY_API_KEY}") is sent to the provider and triggers a 401.
+        GlobalConfig._instance = None
+        GlobalConfig._initialized = False
+        monkeypatch.setenv("TAVILY_API_KEY", "tvly-real-key")
+        cfg = {
+            "llm": {"api_key": "k", "base_url": "u", "model": "m"},
+            "execution": {"max_iterations": 3, "logs_dir": ""},
+            "dataset": {"enabled": True, "output_dir": str(tmp_path / "ds"), "modes": ["trajectory"]},
+            "mcp": {"mcpServers": {}},
+            "agents": {
+                "deep_research": {
+                    "base_class": "sgr_agent_core.agents.sgr_tool_calling_agent.SGRToolCallingAgent",
+                    "role": "deep_research",
+                    "llm": {"api_key": "k"},
+                    "prompts": {"system_prompt_str": "You are a researcher."},
+                    # per-agent overrides only; api_key is NOT repeated here, so it
+                    # is inherited from the global tool config at load time.
+                    "tools": [{"web_search_tool": {"max_results": 10, "max_searches": 8}}],
+                }
+            },
+            "tools": {
+                "web_search_tool": {
+                    "api_key": "${TAVILY_API_KEY}",
+                    "max_results": 5,
+                }
+            },
+        }
+        path = tmp_path / "cfg.yaml"
+        path.write_text(yaml.dump(cfg), encoding="utf-8")
+        config = GlobalConfig.from_yaml(path)
+
+        ws_tool = next(t for t in config.agents["deep_research"].tools if t.name == "web_search_tool")
+        # before inject: the global sentinel was copied into the per-agent ToolDefinition
+        assert ws_tool.tool_kwargs()["api_key"] == "${TAVILY_API_KEY}"
+        _inject_env_secrets(config)
+        # after inject: the per-agent copy is expanded too (this used to be the bug)
+        assert ws_tool.tool_kwargs()["api_key"] == "tvly-real-key"
+
     def test_unset_var_stays_as_sentinel(self, tmp_path, monkeypatch):
         GlobalConfig._instance = None
         GlobalConfig._initialized = False
@@ -130,6 +174,73 @@ class TestInjectEnvSecrets:
         assert config.llm.api_key == "${ZAI_API_KEY}"
         assert config.agents["coder"].llm.api_key == "${ZAI_API_KEY}"
         assert config.tools["web_search_tool"].api_key == "${TAVILY_API_KEY}"
+
+
+def _make_config_with_thinking(tmp_path: Path, output_dir: str, *, enable_thinking: bool | None) -> Path:
+    """Build a config whose global llm optionally sets ``enable_thinking``."""
+    llm: dict[str, object] = {"api_key": "k", "base_url": "u", "model": "m"}
+    if enable_thinking is not None:
+        llm["enable_thinking"] = enable_thinking
+    cfg = {
+        "llm": llm,
+        "execution": {"max_iterations": 3, "logs_dir": ""},
+        "dataset": {"enabled": True, "output_dir": output_dir, "modes": ["trajectory"]},
+        "mcp": {"mcpServers": {}},
+        "agents": {
+            "coder": {
+                "base_class": "sgr_agent_core.agents.tool_calling_agent.ToolCallingAgent",
+                "role": "coder",
+                "prompts": {"system_prompt_str": "You are a coder."},
+                "tools": ["final_answer_tool"],
+            }
+        },
+        "tools": {},
+    }
+    path = tmp_path / "cfg_thinking.yaml"
+    path.write_text(yaml.dump(cfg), encoding="utf-8")
+    return path
+
+
+class TestApplyThinkingOverride:
+    """``_apply_thinking_override`` flips the teacher thinking mode on/off and,
+    crucially, propagates it to every per-agent ``llm`` (each agent holds its
+    own merged copy, mirroring how ``_inject_env_secrets`` treats secrets)."""
+
+    @staticmethod
+    def _fresh(path: Path) -> GlobalConfig:
+        GlobalConfig._instance = None
+        GlobalConfig._initialized = False
+        return GlobalConfig.from_yaml(path)
+
+    def test_override_true_propagates_to_global_and_agents(self, tmp_path):
+        path = _make_config_with_thinking(tmp_path, str(tmp_path / "ds"), enable_thinking=False)
+        config = self._fresh(path)
+        assert config.llm.enable_thinking is False
+
+        _apply_thinking_override(config, True)
+
+        assert config.llm.enable_thinking is True
+        assert config.agents["coder"].llm.enable_thinking is True
+
+    def test_override_false_propagates_to_global_and_agents(self, tmp_path):
+        path = _make_config_with_thinking(tmp_path, str(tmp_path / "ds"), enable_thinking=True)
+        config = self._fresh(path)
+        assert config.llm.enable_thinking is True
+
+        _apply_thinking_override(config, False)
+
+        assert config.llm.enable_thinking is False
+        assert config.agents["coder"].llm.enable_thinking is False
+
+    def test_override_creates_field_when_absent(self, tmp_path):
+        path = _make_config_with_thinking(tmp_path, str(tmp_path / "ds"), enable_thinking=None)
+        config = self._fresh(path)
+        assert not getattr(config.llm, "enable_thinking", False)
+
+        _apply_thinking_override(config, True)
+
+        assert config.llm.enable_thinking is True
+        assert config.agents["coder"].llm.enable_thinking is True
 
 
 class TestSearchKeyPresent:

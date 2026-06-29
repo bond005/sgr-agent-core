@@ -106,6 +106,43 @@ def _mock_client():
     return client
 
 
+def _mock_client_nonfinishing():
+    """Mock client: the model keeps researching until only FinalAnswerTool
+    remains available, then finalizes (forced finalization at max_iterations)."""
+    client = Mock(spec=AsyncOpenAI)
+    reasoning = ReasoningTool(
+        reasoning_steps=["Analyze task", "Decide next step"],
+        current_situation="Researching",
+        plan_status="On track",
+        enough_data=False,
+        remaining_steps=["Keep searching"],
+        task_completed=False,
+    )
+    final = FinalAnswerTool(
+        reasoning="forced finalization",
+        completed_steps=["s1"],
+        answer="Best available answer after exhausting the step budget.",
+        status=AgentStatesEnum.COMPLETED,
+    )
+
+    def mock_stream(**kwargs):
+        tools_param = kwargs.get("tools", [])
+        first_name = None
+        if tools_param and isinstance(tools_param[0], dict):
+            first_name = tools_param[0].get("function", {}).get("name")
+        if first_name == ReasoningTool.tool_name:
+            return _Stream(_completion(_tool_call(reasoning, "r-call")))
+        # Action phase: finalize only when forced (FinalAnswerTool is the only
+        # available action tool, i.e. max_iterations reached).
+        available = {t.get("function", {}).get("name") for t in tools_param if isinstance(t, dict)}
+        if available == {"finalanswertool"}:
+            return _Stream(_completion(_tool_call(final, "a-call")))
+        return _Stream(_completion(_tool_call(NonFinishingTool(note="wip"), "a-call")))
+
+    client.chat.completions.stream = Mock(side_effect=mock_stream)
+    return client
+
+
 def _read(path):
     with open(path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
@@ -258,3 +295,49 @@ class TestTrajectoryRecording:
         await agent._record_trajectory()
 
         assert not os.path.exists(str(tmp_path / "trajectories.jsonl"))
+
+    @pytest.mark.asyncio
+    async def test_trajectory_recorded_when_forced_at_max_iterations(self, tmp_path):
+        """When iterations are exhausted the agent must finalize gracefully
+        (COMPLETED) and record a trajectory, instead of crashing with
+        'Max iterations reached' and discarding the run."""
+        import asyncio
+        import os
+
+        cfg = DatasetRecordingConfig(
+            enabled=True, output_dir=str(tmp_path), modes=["trajectory", "raw"], include_reasoning=True
+        )
+        agent_config = AgentConfig(
+            llm=LLMConfig(api_key="k", model="glm-5.2"),
+            prompts=PromptsConfig(system_prompt_str="s", initial_user_request_str="i", clarification_response_str="c"),
+            execution=ExecutionConfig(max_iterations=3, max_clarifications=3),
+            dataset=cfg,
+            role="deep_research",
+        )
+        agent = SGRToolCallingAgent(
+            task_messages=[{"role": "user", "content": "q"}],
+            openai_client=_mock_client_nonfinishing(),
+            agent_config=agent_config,
+            toolkit=[FinalAnswerTool, NonFinishingTool],
+        )
+
+        async def consume():
+            async for _ in agent.streaming_generator.stream():
+                pass
+
+        consumer = asyncio.create_task(consume())
+        result = await agent.execute()
+        consumer.cancel()
+        try:
+            await consumer
+        except asyncio.CancelledError:
+            pass
+
+        # The agent finalized gracefully instead of failing on "Max iterations reached".
+        assert agent._context.state == AgentStatesEnum.COMPLETED
+        assert result is not None
+        traj_path = str(tmp_path / "trajectories.jsonl")
+        assert os.path.exists(traj_path)
+        trajectories = _read(traj_path)
+        assert len(trajectories) == 1
+        assert trajectories[0]["metadata"]["finish_state"] == "completed"
