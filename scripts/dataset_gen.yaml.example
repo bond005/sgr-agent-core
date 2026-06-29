@@ -12,6 +12,12 @@ llm:
   base_url: "https://api.z.ai/api/paas/v4/"
   model: "glm-5.2"
   max_tokens: 8000
+  # temperature=0.4 gives the stochastic sampling that lets the agent's retry
+  # logic recover from transient malformed/missing tool-calls (each retry is a
+  # fresh sample). Do NOT set a `seed`: a fixed seed makes sampling deterministic
+  # and defeats these retries (identical bad output on every attempt). Z.ai's
+  # context cache only caches input-prefix computation, never replayed outputs,
+  # so temperature is what governs retry effectiveness.
   temperature: 0.4
   # Default OFF. This is an inference-time toggle only (it does not affect the
   # agent cycle); it changes whether GLM emits a reasoning_content trace. The

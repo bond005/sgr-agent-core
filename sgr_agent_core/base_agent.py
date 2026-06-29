@@ -171,6 +171,12 @@ class BaseAgent(AgentRegistryMixin):
 
     name: str = "base_agent"
 
+    # Set to True when a phase used a synthetic fallback instead of a real model
+    # tool-call (e.g. missing tool-call after exhausting retries). Surfaced into
+    # the trajectory metadata so degraded/distillation-noisy runs can be filtered
+    # out during dataset export.
+    _used_fallback: bool = False
+
     def __init__(
         self,
         task_messages: list[ChatCompletionMessageParam],
@@ -431,6 +437,7 @@ class BaseAgent(AgentRegistryMixin):
                     "metadata": {
                         "iterations": self._context.iteration,
                         "finish_state": finish_state,
+                        "used_fallback": self._used_fallback,
                     },
                 }
             )

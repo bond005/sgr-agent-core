@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import Field, field_validator
 
-from sgr_agent_core.base_tool import SystemBaseTool
+from sgr_agent_core.base_tool import SystemBaseTool, truncate_list
 
 # Length budget for the free-text reasoning fields. These limits are kept in the
 # JSON schema (as ``maxLength``) so the model sees a soft hint to stay concise,
@@ -11,8 +11,13 @@ from sgr_agent_core.base_tool import SystemBaseTool
 # validates streamed tool arguments against this Pydantic model on the client
 # side: without truncation a single over-long ``current_situation`` (common with
 # verbose/thinking-enabled models such as GLM-5.2) crashes the whole agent run.
+# The same applies to the list fields (``reasoning_steps``/``remaining_steps``):
+# an over-long list raises ``too_long`` and crashes the run, so they are
+# truncated the same way.
 CURRENT_SITUATION_MAX_LENGTH = 1200
 PLAN_STATUS_MAX_LENGTH = 600
+REASONING_STEPS_MAX_LENGTH = 3
+REMAINING_STEPS_MAX_LENGTH = 3
 
 
 def _truncate(value: object, limit: int) -> object:
@@ -35,7 +40,7 @@ class ReasoningTool(SystemBaseTool):
     reasoning_steps: list[str] = Field(
         description="Step-by-step reasoning (brief, 1 sentence each)",
         min_length=2,
-        max_length=3,
+        max_length=REASONING_STEPS_MAX_LENGTH,
     )
 
     # Reasoning and state assessment
@@ -55,7 +60,7 @@ class ReasoningTool(SystemBaseTool):
     # Next step planning
     remaining_steps: list[str] = Field(
         description="0-3 remaining steps (brief, action-oriented)",
-        max_length=3,
+        max_length=REMAINING_STEPS_MAX_LENGTH,
     )
     task_completed: bool = Field(description="Is the research task finished?")
 
@@ -68,6 +73,16 @@ class ReasoningTool(SystemBaseTool):
     @classmethod
     def _truncate_plan_status(cls, v: object) -> object:
         return _truncate(v, PLAN_STATUS_MAX_LENGTH)
+
+    @field_validator("reasoning_steps", mode="before")
+    @classmethod
+    def _truncate_reasoning_steps(cls, v: object) -> object:
+        return truncate_list(v, REASONING_STEPS_MAX_LENGTH)
+
+    @field_validator("remaining_steps", mode="before")
+    @classmethod
+    def _truncate_remaining_steps(cls, v: object) -> object:
+        return truncate_list(v, REMAINING_STEPS_MAX_LENGTH)
 
     async def __call__(self, *args, **kwargs):
         return ""

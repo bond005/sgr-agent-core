@@ -12,8 +12,9 @@ Compact guide for OpenCode sessions working in this repo. Read before editing.
 - `sgr-agent-frontend/` — separate Vue 3 + TypeScript + Vite app with its **own** toolchain (`npm`, eslint, prettier). Do not mix its conventions with the Python side.
 - `examples/` — example agents and configs. The tracked research agents live in `examples/sgr_deep_research/`.
 - `tests/` — pytest suite (flat, no subpackages).
-- **Ignore these — untracked local artifacts, not source:** root `sgr_deep_research/`, `sgr_deep_research.egg-info/`, `uv.lock`. The project uses pip/venv, not uv.
-- `config.yaml`, `agents.yaml`, `.venv/` are gitignored. Edit the `*.example` templates; copy to the real name to run.
+- `config.yaml`, `agents.yaml`, `.env`, `.venv/` are gitignored — edit the `*.example` templates and copy to the real name to run.
+- **Gitignore gotcha:** `*.txt` and `*.lock` are globally ignored. The bundled prompt files (`sgr_agent_core/prompts/*.txt`) are tracked exceptions; any new `.txt`-based prompt file needs `git add -f`.
+- Uses pip/venv + setuptools, **not** uv/poetry. If a root-level `sgr_deep_research/` ever appears locally, it's an artifact — the tracked source is `examples/sgr_deep_research/`.
 
 ## Commands
 
@@ -32,6 +33,8 @@ sgr-dataset <recorded_dir> -o <out>               # convert recorded trajectorie
 ```
 
 CI runs lint (`make format` on Python 3.13) then installs from sdist and runs `coverage run -m pytest`. Lint must pass before publish.
+
+Pre-commit also runs `mdformat --number` on Markdown outside `docs/` (README/AGENTS.md/CONTRIBUTING get auto-reformatted) and `docformatter` on docstrings — expect your Markdown/docstrings to be rewritten on commit.
 
 ## Required workflow (enforced by team rules)
 
@@ -58,9 +61,10 @@ Implement **one class at a time, bottom-up** through the architecture layers (ba
   - `SGRAgent` — structured output (`response_format`)
   - `ToolCallingAgent` — native function calling, no explicit reasoning
   - `SGRToolCallingAgent` — hybrid (SGR reasoning + function-calling tool selection); best default
+  - Specialized variants also ship: `DialogAgent` (overrides `_execution_step` to add an after-action phase) and `IronAgent`.
 - Tools are **Pydantic models** (`BaseTool` subclass) implementing `async __call__(context, config, **kwargs) -> str`.
 - Config hierarchy: `GlobalConfig` (singleton) → `AgentDefinition` → `AgentConfig`. `extra="allow"` everywhere.
-- **Search settings (`tavily_api_key`, `max_results`, ...) are per-tool under `tools:`, NOT in `AgentConfig`.**
+- **Search settings are per-tool under `tools:`, NOT in `AgentConfig`.** `web_search_tool.engine` supports `tavily` (default), `brave`, `perplexity`; `extract_page_content_tool` is Tavily-only.
 - **Dataset recording (distillation):** enable via the `dataset:` config section (on `AgentConfig`, overridable per agent). All LLM calls funnel through `BaseAgent._llm_call(phase, **openai_kwargs)` (the single capture point — keep new agents using it). Two JSONL granularities are written: `llm_calls.jsonl` (raw request/response per call) and `trajectories.jsonl` (one sharegpt-style record per agent run). A shared `DatasetRecorder` (module singleton in `services/dataset_recorder.py`) is created lazily; the `role` field tags records by agent role. Convert with `sgr-dataset`. Teacher = any OpenAI-compatible model (GLM-5.2, GPT-4o); set `enable_thinking: false` under `llm:` for reliable `SGRAgent` structured output.
 
 ## Configuration
@@ -73,7 +77,7 @@ Implement **one class at a time, bottom-up** through the architecture layers (ba
 ## Testing notes
 
 - `asyncio_mode = "auto"` (pytest-asyncio). `@pytest.mark.asyncio` is still used in the suite.
-- Markers: `unit`, `integration`, `slow`, `e2e`. **e2e is excluded by default** (`-m "not e2e"` in `pytest.ini`).
+- Markers: `unit`, `integration`, `slow`, `e2e`. **e2e is excluded by default** (`-m "not e2e"` in `pytest.ini`), and `--strict-markers` is on — register any new marker in `pytest.ini` before using it.
 - Use the `create_test_agent()` helper and fixtures (`mock_openai_client`, `test_llm_config`, ...) in `tests/conftest.py`. Always mock `AsyncOpenAI` and external APIs (Tavily, MCP).
 
 ## Deeper reference

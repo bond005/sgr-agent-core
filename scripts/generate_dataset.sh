@@ -32,7 +32,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 VENV="${REPO_ROOT}/.venv"
-PYTHON="${VENV}/bin/python"
 CONFIG="${SCRIPT_DIR}/dataset_gen.yaml.example"
 SEEDS_DIR="${SCRIPT_DIR}/seeds"
 DATASET_DIR="${SCRIPT_DIR}/dataset"
@@ -41,10 +40,21 @@ SHAREGPT_DIR="${SCRIPT_DIR}/dataset_sharegpt"
 log() { echo "[generate_dataset] $*" >&2; }
 die() { echo "[generate_dataset] ERROR: $*" >&2; exit 1; }
 
-# ---- checks ----------------------------------------------------------------
-if [[ ! -x "${PYTHON}" ]]; then
-    die "Python interpreter not found at ${PYTHON}. Create the venv first (python -m venv .venv)."
+# ---- locate python: prefer active venv/conda, fall back to repo .venv ------
+if [[ -n "${VIRTUAL_ENV:-}" && -x "${VIRTUAL_ENV}/bin/python" ]]; then
+    PYTHON="${VIRTUAL_ENV}/bin/python"
+elif [[ -n "${CONDA_PREFIX:-}" && -x "${CONDA_PREFIX}/bin/python" ]]; then
+    PYTHON="${CONDA_PREFIX}/bin/python"
+elif [[ -x "${VENV}/bin/python" ]]; then
+    PYTHON="${VENV}/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON="$(command -v python3)"
+else
+    die "No Python interpreter found. Activate a venv/conda env, create .venv (python -m venv .venv), or ensure python3 is on PATH."
 fi
+log "Using Python: ${PYTHON}"
+
+# ---- checks ----------------------------------------------------------------
 # Ensure pytest/pandas etc. are importable (best-effort, non-fatal if offline).
 "${PYTHON}" -c "import yaml, openai" 2>/dev/null || die "Missing core deps in venv; run: pip install -e ."
 

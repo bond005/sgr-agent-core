@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from tavily import AsyncTavilyClient
 
-from sgr_agent_core.base_tool import BaseTool
+from sgr_agent_core.base_tool import BaseTool, truncate_list
 from sgr_agent_core.models import SourceData
 
 if TYPE_CHECKING:
@@ -15,6 +15,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# Mirror of Field(max_length=...) on urls; referenced by the truncating
+# validator so the two never drift out of sync.
+URLS_MAX_LENGTH = 5
 
 
 class ExtractPageContentConfig(BaseModel, extra="allow"):
@@ -54,7 +58,14 @@ class ExtractPageContentTool(BaseTool):
     config_model = ExtractPageContentConfig
 
     reasoning: str = Field(description="Why extract these specific pages")
-    urls: list[str] = Field(description="List of URLs to extract full content from", min_length=1, max_length=5)
+    urls: list[str] = Field(
+        description="List of URLs to extract full content from", min_length=1, max_length=URLS_MAX_LENGTH
+    )
+
+    @field_validator("urls", mode="before")
+    @classmethod
+    def _truncate_urls(cls, v: object) -> object:
+        return truncate_list(v, URLS_MAX_LENGTH)
 
     @staticmethod
     async def _extract(config: ExtractPageContentConfig, urls: list[str]) -> list[SourceData]:

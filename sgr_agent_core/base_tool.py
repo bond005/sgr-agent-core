@@ -18,6 +18,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def truncate_list(value: object, limit: int) -> object:
+    """Truncate a list to ``limit`` items; pass non-list input through
+    unchanged.
+
+    The OpenAI SDK validates streamed tool-call JSON arguments against the
+    Pydantic schema on the client side, so an over-long list (common with
+    verbose models such as GLM-5.2) raises ``ValidationError`` and crashes the
+    whole agent run. Used in ``field_validator(..., mode="before")`` so the
+    schema's ``max_length`` stays as a model-facing hint while runtime
+    over-long values are silently capped instead of rejecting the call.
+    Non-list input is returned unchanged so Pydantic still reports genuine type
+    errors.
+    """
+    if isinstance(value, list) and len(value) > limit:
+        return value[:limit]
+    return value
+
+
 class ToolRegistryMixin:
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)

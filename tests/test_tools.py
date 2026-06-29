@@ -5,13 +5,14 @@ This module contains simple tests for all tools:
 - Config reading (if needed)
 """
 
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sgr_agent_core.models import AgentContext, SourceData
+from sgr_agent_core.models import AgentContext, AgentStatesEnum, SourceData
 from sgr_agent_core.tools import (
     AdaptPlanTool,
     AnswerTool,
@@ -635,3 +636,107 @@ class TestRunCommandTool:
                 )
             assert "ls" in result
             mock_get_mounts.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "tool_cls,field,limit,base_kwargs",
+    [
+        (
+            FinalAnswerTool,
+            "completed_steps",
+            5,
+            {"reasoning": "r", "answer": "a", "status": AgentStatesEnum.COMPLETED},
+        ),
+        (
+            AdaptPlanTool,
+            "plan_changes",
+            3,
+            {"reasoning": "r", "original_goal": "g", "new_goal": "g2", "next_steps": ["s1", "s2"]},
+        ),
+        (
+            AdaptPlanTool,
+            "next_steps",
+            4,
+            {"reasoning": "r", "original_goal": "g", "new_goal": "g2", "plan_changes": ["c1"]},
+        ),
+        (
+            GeneratePlanTool,
+            "planned_steps",
+            4,
+            {"reasoning": "r", "research_goal": "g", "search_strategies": ["s1", "s2"]},
+        ),
+        (
+            GeneratePlanTool,
+            "search_strategies",
+            3,
+            {"reasoning": "r", "research_goal": "g", "planned_steps": ["p1", "p2", "p3"]},
+        ),
+        (
+            ClarificationTool,
+            "unclear_terms",
+            3,
+            {"reasoning": "r", "assumptions": ["a1", "a2"], "questions": ["q1"]},
+        ),
+        (
+            ClarificationTool,
+            "assumptions",
+            3,
+            {"reasoning": "r", "unclear_terms": ["u1"], "questions": ["q1"]},
+        ),
+        (
+            ClarificationTool,
+            "questions",
+            3,
+            {"reasoning": "r", "unclear_terms": ["u1"], "assumptions": ["a1", "a2"]},
+        ),
+        (ExtractPageContentTool, "urls", 5, {"reasoning": "r"}),
+        (
+            ReasoningTool,
+            "reasoning_steps",
+            3,
+            {
+                "current_situation": "s",
+                "plan_status": "p",
+                "enough_data": True,
+                "remaining_steps": ["r1"],
+                "task_completed": True,
+            },
+        ),
+        (
+            ReasoningTool,
+            "remaining_steps",
+            3,
+            {
+                "reasoning_steps": ["r1", "r2"],
+                "current_situation": "s",
+                "plan_status": "p",
+                "enough_data": True,
+                "task_completed": True,
+            },
+        ),
+    ],
+    ids=lambda v: getattr(v, "__name__", v) if isinstance(v, type) else v,
+)
+class TestListFieldTruncation:
+    """Over-long list tool arguments must truncate to ``max_length`` instead of
+    raising.
+
+    Reproduces the production crash where the OpenAI SDK validates streamed
+    tool-call JSON arguments against the Pydantic schema on the client side and
+    raises ``ValidationError`` (e.g. FinalAnswerTool.completed_steps=7 > 5),
+    crashing the whole agent run. Mirrors the truncation convention already used
+    for the string fields of ReasoningTool.
+    """
+
+    def test_list_truncates_on_model_validate(self, tool_cls, field, limit, base_kwargs):
+        payload = {**base_kwargs, field: [f"item {i}" for i in range(limit + 5)]}
+        instance = tool_cls.model_validate(payload)
+        assert len(getattr(instance, field)) == limit
+
+    def test_list_truncates_on_model_validate_json(self, tool_cls, field, limit, base_kwargs):
+        """``model_validate_json`` is exactly what the OpenAI SDK calls when
+        parsing streamed function-tool arguments."""
+        payload = {**base_kwargs, field: [f"item {i}" for i in range(limit + 5)]}
+        instance = tool_cls.model_validate_json(json.dumps(payload))
+        assert len(getattr(instance, field)) == limit
